@@ -1,13 +1,11 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { IMAGE_MODELS, IMAGE_RESOLUTIONS, MODEL_PRICING } from '@/lib/config';
+import { VIDEO_MODELS, MODEL_PRICING } from '@/lib/config';
 
-export default function ImagePage() {
+export default function VideoPage() {
   const [userId, setUserId] = useState('');
   const [prompt, setPrompt] = useState('');
-  const [provider, setProvider] = useState<string>('OpenAI');
-  const [model, setModel] = useState<string>('');
-  const [resolution, setResolution] = useState<string>('1024x1024');
+  const [model, setModel] = useState<string>(VIDEO_MODELS[0]);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
 
@@ -18,19 +16,7 @@ export default function ImagePage() {
       localStorage.setItem('userId', storedUserId);
     }
     setUserId(storedUserId);
-
-    const models = IMAGE_MODELS['OpenAI'];
-    if (models && models.length > 0) {
-      setModel(models[0]);
-    }
   }, []);
-
-  useEffect(() => {
-    const models = IMAGE_MODELS[provider];
-    if (models && models.length > 0) {
-      setModel(models[0]);
-    }
-  }, [provider]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,7 +26,7 @@ export default function ImagePage() {
     setResult(null);
 
     try {
-      const response = await fetch('/api/image', {
+      const response = await fetch('/api/video', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -49,7 +35,6 @@ export default function ImagePage() {
           userId,
           model,
           prompt,
-          resolution,
         }),
       });
       const data = await response.json();
@@ -59,7 +44,7 @@ export default function ImagePage() {
         return;
       }
 
-      setResult(data.imageUrl);
+      setResult(data.videoUrl);
     } catch (error: any) {
       alert(error.message);
     } finally {
@@ -68,64 +53,32 @@ export default function ImagePage() {
   };
 
   const currentPricing = MODEL_PRICING[model];
-  const availableModels = IMAGE_MODELS[provider] || [];
-  const availableResolutions = IMAGE_RESOLUTIONS[model] || [];
 
   return (
     <div className="min-h-screen bg-white" style={{ backgroundImage: 'radial-gradient(#e5e7eb 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
       <div className="max-w-5xl mx-auto px-4 py-8">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">AI 绘图</h1>
-          <p className="text-gray-500">输入提示词，生成精美的图片</p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">AI 视频生成</h1>
+          <p className="text-gray-500">输入提示词，生成动态视频</p>
         </div>
 
         <div className="flex gap-6">
           <div className="w-64 flex-shrink-0">
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sticky top-8">
-              <h3 className="text-sm font-semibold text-gray-700 mb-4">绘图设置</h3>
+              <h3 className="text-sm font-semibold text-gray-700 mb-4">视频设置</h3>
               
               <div className="space-y-4">
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-2">
-                    模型厂商
-                  </label>
-                  <select
-                    value={provider}
-                    onChange={(e) => setProvider(e.target.value)}
-                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent"
-                  >
-                    {Object.keys(IMAGE_MODELS).map(p => (
-                      <option key={p} value={p}>{p}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-2">
-                    模型
+                    视频模型
                   </label>
                   <select
                     value={model}
                     onChange={(e) => setModel(e.target.value)}
                     className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent"
                   >
-                    {availableModels.map(m => (
+                    {VIDEO_MODELS.map(m => (
                       <option key={m} value={m}>{m}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-2">
-                    分辨率
-                  </label>
-                  <select
-                    value={resolution}
-                    onChange={(e) => setResolution(e.target.value)}
-                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent"
-                  >
-                    {availableResolutions.map(r => (
-                      <option key={r} value={r}>{r}</option>
                     ))}
                   </select>
                 </div>
@@ -134,7 +87,7 @@ export default function ImagePage() {
                   <div className="text-xs text-gray-500">
                     <div className="flex justify-between">
                       <span>单次价格</span>
-                      <span className="font-medium text-gray-700">{currentPricing?.image || 0} 积分</span>
+                      <span className="font-medium text-gray-700">{currentPricing?.video || 0} 积分</span>
                     </div>
                   </div>
                 </div>
@@ -146,7 +99,9 @@ export default function ImagePage() {
             {/* 结果展示 */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 mb-6 h-[400px] overflow-hidden flex items-center justify-center">
               {result ? (
-                <img src={result} alt="Generated" className="max-w-full max-h-full object-contain" />
+                <video src={result} controls className="max-w-full max-h-full object-contain">
+                  您的浏览器不支持视频播放
+                </video>
               ) : loading ? (
                 <div className="text-gray-500">
                   <div className="flex flex-col items-center">
@@ -158,10 +113,10 @@ export default function ImagePage() {
                 <div className="flex flex-col items-center text-gray-400">
                   <div className="w-16 h-16 bg-yellow-50 rounded-full flex items-center justify-center mb-4">
                     <svg className="w-8 h-8 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                     </svg>
                   </div>
-                  <p>生成的图片将显示在这里</p>
+                  <p>生成的视频将显示在这里</p>
                 </div>
               )}
             </div>
@@ -171,7 +126,7 @@ export default function ImagePage() {
               <textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                placeholder="描述您想要生成的图片..."
+                placeholder="描述您想要生成的视频..."
                 rows={3}
                 className="w-full border border-gray-200 rounded-2xl px-6 py-4 pr-32 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent shadow-sm resize-none"
                 disabled={loading}

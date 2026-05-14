@@ -1,136 +1,186 @@
-import fs from 'fs';
-import path from 'path';
-
-// 数据文件路径
-const DATA_DIR = path.join(process.cwd(), 'data');
-const USERS_FILE = path.join(DATA_DIR, 'users.json');
-const RECHARGES_FILE = path.join(DATA_DIR, 'recharges.json');
-
-// 确保数据目录存在
-function ensureDir() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-}
-
-// 读取用户数据
-function readUsers(): Record<string, number> {
-  ensureDir();
-  if (!fs.existsSync(USERS_FILE)) {
-    return {};
-  }
-  return JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-}
-
-// 写入用户数据
-function writeUsers(users: Record<string, number>) {
-  ensureDir();
-  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
-}
-
-// 读取充值记录
-function readRecharges(): RechargeRequest[] {
-  ensureDir();
-  if (!fs.existsSync(RECHARGES_FILE)) {
-    return [];
-  }
-  return JSON.parse(fs.readFileSync(RECHARGES_FILE, 'utf8'));
-}
-
-// 写入充值记录
-function writeRecharges(recharges: RechargeRequest[]) {
-  ensureDir();
-  fs.writeFileSync(RECHARGES_FILE, JSON.stringify(recharges, null, 2));
-}
+import { sql } from '@vercel/postgres';
 
 // 用户积分操作
 export async function getUserPoints(userId: string): Promise<number> {
-  const users = readUsers();
-  return users[userId] || 0;
+  // 初始化表结构
+  await initTables();
+  
+  const result = await sql`
+    SELECT points FROM users WHERE user_id = ${userId}
+  `;
+  
+  if (result.rows.length === 0) {
+    // 用户不存在，创建新用户，默认100积分
+    await sql`
+      INSERT INTO users (user_id, points, created_at, updated_at)
+      VALUES (${userId}, 100, NOW(), NOW())
+    `;
+    return 100;
+  }
+  
+  return result.rows[0].points;
 }
 
 export async function updateUserPoints(userId: string, points: number) {
-  const users = readUsers();
-  users[userId] = (users[userId] || 0) + points;
-  writeUsers(users);
+  await initTables();
+  
+  await sql`
+    INSERT INTO users (user_id, points, created_at, updated_at)
+    VALUES (${userId}, ${points}, NOW(), NOW())
+    ON CONFLICT (user_id) 
+    DO UPDATE SET 
+      points = users.points + ${points},
+      updated_at = NOW()
+  `;
 }
 
 export async function deductUserPoints(userId: string, points: number): Promise<boolean> {
+  await initTables();
+  
   const current = await getUserPoints(userId);
   if (current < points) {
     return false;
   }
-  await updateUserPoints(userId, -points);
+  
+  await sql`
+    UPDATE users 
+    SET points = points - ${points}, updated_at = NOW()
+    WHERE user_id = ${userId}
+  `;
+  
   return true;
 }
 
 // 充值记录操作
 export type RechargeRequest = {
-  id: string;
+  id: number;
+  user_id: string;
+  amount: number;
+  points: number;
+  screenshot_url: string;
+  status: 'pending' | 'approved' | 'rejected';
+  created_at: string;
+  updated_at: string;
+};
+
+export async function createRechargeRequest(request: {
   userId: string;
   amount: number;
   points: number;
   screenshot: string;
-  status: 'pending' | 'approved' | 'rejected';
-  createdAt: string;
-};
-
-export async function createRechargeRequest(request: Omit<RechargeRequest, 'id' | 'createdAt' | 'status'>) {
-  const recharges = readRecharges();
-  const newRequest: RechargeRequest = {
-    ...request,
-    id: Date.now().toString(),
-    status: 'pending',
-    createdAt: new Date().toISOString(),
-  };
-  recharges.unshift(newRequest);
-  writeRecharges(recharges);
-  return newRequest;
+}) {
+  await initTables();
+  
+  const result = await sql`
+    INSERT INTO recharges (user_id, amount, points, screenshot_url, status, created_at, updated_at)
+    VALUES (${request.userId}, ${request.amount}, ${request.points}, ${request.screenshot}, 'pending', NOW(), NOW())
+    RETURNING id
+  `;
+  
+  return result.rows[0];
 }
 
 export async function getPendingRecharges(): Promise<RechargeRequest[]> {
-  const recharges = readRecharges();
-  return recharges.filter(r => r.status === 'pending');
+  await initTables();
+  
+  const result = await sql`
+    SELECT * FROM recharges 
+    WHERE status = 'pending'
+    ORDER BY created_at DESC
+  `;
+  
+  return result.rows as RechargeRequest[];
 }
 
 export async function getAllRecharges(): Promise<RechargeRequest[]> {
-  return readRecharges();
+  await initTables();
+  
+  const result = await sql`
+    SELECT * FROM recharges
+    ORDER BY created_at DESC
+  `;
+  
+  return result.rows as RechargeRequest[];
 }
 
-export async function approveRecharge(id: string) {
-  const recharges = readRecharges();
-  const request = recharges.find(r => r.id === id);
-  if (!request || request.status !== 'pending') {
-    throw new Error('充值记录不存在或已处理');
+export async function approveRecharge(id: number) {
+  await initTables();
+  
+  // 先获取充值记录
+  const request = await sql`
+    SELECT * FROM recharges WHERE id = ${id}
+  `;
+  
+  if (request.rows.length === 0) {
+    throw new Error('充值记录不存在');
+  }
+  
+  const recharge = request.rows[0] as RechargeRequest;
+  if (recharge.status !== 'pending') {
+    throw new Error('该记录已处理');
   }
   
   // 更新用户积分
-  await updateUserPoints(request.userId, request.points);
+  await updateUserPoints(recharge.user_id, recharge.points);
   
   // 更新充值状态
-  request.status = 'approved';
-  writeRecharges(recharges);
+  await sql`
+    UPDATE recharges 
+    SET status = 'approved', updated_at = NOW()
+    WHERE id = ${id}
+  `;
   
-  return request;
+  return recharge;
 }
 
-export async function rejectRecharge(id: string) {
-  const recharges = readRecharges();
-  const request = recharges.find(r => r.id === id);
-  if (!request || request.status !== 'pending') {
-    throw new Error('充值记录不存在或已处理');
+export async function rejectRecharge(id: number) {
+  await initTables();
+  
+  const request = await sql`
+    SELECT * FROM recharges WHERE id = ${id}
+  `;
+  
+  if (request.rows.length === 0) {
+    throw new Error('充值记录不存在');
   }
   
-  request.status = 'rejected';
-  writeRecharges(recharges);
+  const recharge = request.rows[0] as RechargeRequest;
+  if (recharge.status !== 'pending') {
+    throw new Error('该记录已处理');
+  }
   
-  return request;
+  await sql`
+    UPDATE recharges 
+    SET status = 'rejected', updated_at = NOW()
+    WHERE id = ${id}
+  `;
+  
+  return recharge;
 }
 
-/**
- * 注意：当前使用的是本地文件存储，在Vercel部署时，文件系统是临时的，
- * 数据会丢失。建议您替换为使用数据库，比如：
- * - Vercel Postgres: https://vercel.com/storage/postgres
- * - Upstash Redis: https://upstash.com/
- * 您只需要修改这里的读写逻辑即可，其他代码无需改动
- */
+// 初始化数据库表
+async function initTables() {
+  // 创建 users 表
+  await sql`
+    CREATE TABLE IF NOT EXISTS users (
+      user_id VARCHAR(255) PRIMARY KEY,
+      points INTEGER NOT NULL DEFAULT 100,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `;
+  
+  // 创建 recharges 表
+  await sql`
+    CREATE TABLE IF NOT EXISTS recharges (
+      id SERIAL PRIMARY KEY,
+      user_id VARCHAR(255) NOT NULL,
+      amount INTEGER NOT NULL,
+      points INTEGER NOT NULL,
+      screenshot_url TEXT,
+      status VARCHAR(20) NOT NULL DEFAULT 'pending',
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `;
+}

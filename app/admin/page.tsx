@@ -1,82 +1,58 @@
 'use client';
-
 import { useState, useEffect } from 'react';
 import type { RechargeRequest } from '@/lib/db';
 
 export default function AdminPage() {
-  const [userId, setUserId] = useState('');
   const [recharges, setRecharges] = useState<RechargeRequest[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    // 获取用户ID
-    const storedUserId = localStorage.getItem('userId');
-    if (storedUserId) {
-      setUserId(storedUserId);
-      // 获取充值列表
-      fetch(`/api/admin/recharges?userId=${storedUserId}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.recharges) {
-            setRecharges(data.recharges);
-          }
-        })
-        .catch(console.error)
-        .finally(() => setLoading(false));
+  const loadRecharges = async () => {
+    try {
+      const response = await fetch('/api/admin/recharges');
+      const data = await response.json();
+      setRecharges(data.recharges || []);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
     }
+  };
+
+  useEffect(() => {
+    loadRecharges();
   }, []);
 
-  const handleApprove = async (rechargeId: string) => {
+  const handleApprove = async (id: number) => {
+    if (!confirm('确定要批准这个充值申请吗？')) return;
+    
     try {
-      const response = await fetch('/api/admin/approve', {
+      await fetch('/api/admin/approve', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          userId,
-          rechargeId,
-          action: 'approve',
-        }),
+        body: JSON.stringify({ id, action: 'approve' }),
       });
-
-      const data = await response.json();
-      if (data.success) {
-        alert('审核通过，积分已发放');
-        // 刷新列表
-        window.location.reload();
-      } else {
-        alert(data.error || '操作失败');
-      }
+      alert('已批准！');
+      loadRecharges();
     } catch (error: any) {
       alert(error.message);
     }
   };
 
-  const handleReject = async (rechargeId: string) => {
+  const handleReject = async (id: number) => {
     if (!confirm('确定要拒绝这个充值申请吗？')) return;
-
+    
     try {
-      const response = await fetch('/api/admin/approve', {
+      await fetch('/api/admin/approve', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          userId,
-          rechargeId,
-          action: 'reject',
-        }),
+        body: JSON.stringify({ id, action: 'reject' }),
       });
-
-      const data = await response.json();
-      if (data.success) {
-        alert('已拒绝');
-        // 刷新列表
-        window.location.reload();
-      } else {
-        alert(data.error || '操作失败');
-      }
+      alert('已拒绝！');
+      loadRecharges();
     } catch (error: any) {
       alert(error.message);
     }
@@ -85,114 +61,132 @@ export default function AdminPage() {
   const pendingRecharges = recharges.filter(r => r.status === 'pending');
   const processedRecharges = recharges.filter(r => r.status !== 'pending');
 
-  // 如果不是管理员，显示无权访问
-  if (userId !== 'admin') {
-    return (
-      <div className="max-w-2xl mx-auto p-4">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-          <h1 className="text-xl font-bold text-red-700">无权访问</h1>
-          <p className="text-red-600 mt-2">您不是管理员，无法访问此页面</p>
-          <p className="text-sm text-red-500 mt-4">
-            要成为管理员，请将您的用户ID设置为 "admin"
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="max-w-4xl mx-auto p-4">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">管理后台</h1>
+    <div className="min-h-screen bg-white" style={{ backgroundImage: 'radial-gradient(#e5e7eb 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
+      <div className="max-w-5xl mx-auto px-4 py-8">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">管理后台</h1>
+          <p className="text-gray-500">审核用户的充值申请</p>
+        </div>
 
-      <div className="mb-8">
-        <h2 className="text-lg font-medium text-gray-900 mb-4">待审核充值 ({pendingRecharges.length})</h2>
-        
-        {loading ? (
-          <div className="text-center py-8">加载中...</div>
-        ) : pendingRecharges.length === 0 ? (
-          <div className="bg-white rounded-lg shadow p-6 text-center text-gray-500">
-            暂无待审核的充值申请
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {pendingRecharges.map(recharge => (
-              <div key={recharge.id} className="bg-white rounded-lg shadow p-4">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <p className="text-sm text-gray-500">用户ID: <span className="font-mono">{recharge.userId}</span></p>
-                    <p className="text-sm text-gray-500">金额: {recharge.amount} 元 / {recharge.points} 积分</p>
-                    <p className="text-sm text-gray-500">时间: {new Date(recharge.createdAt).toLocaleString()}</p>
+        {/* 待审核 */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 mb-8">
+          <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
+            <span className="w-3 h-3 bg-yellow-500 rounded-full mr-2"></span>
+            待审核申请
+            <span className="ml-2 text-sm font-normal text-gray-500">
+              ({pendingRecharges.length} 条)
+            </span>
+          </h2>
+
+          {loading ? (
+            <div className="text-center py-8 text-gray-500">加载中...</div>
+          ) : pendingRecharges.length === 0 ? (
+            <div className="text-center py-8 text-gray-400">
+              暂无待审核的申请
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {pendingRecharges.map(recharge => (
+                <div key={recharge.id} className="border border-gray-200 rounded-xl p-6">
+                  <div className="flex items-start gap-6">
+                    <div className="flex-1">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                        <div>
+                          <p className="text-xs text-gray-500">用户ID</p>
+                          <p className="text-sm font-mono text-gray-900">{recharge.user_id}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">充值金额</p>
+                          <p className="text-sm font-semibold text-gray-900">{recharge.amount} 元</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">赠送积分</p>
+                          <p className="text-sm font-semibold text-yellow-600">{recharge.points} 积分</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">申请时间</p>
+                          <p className="text-sm text-gray-700">
+                            {new Date(recharge.created_at).toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex-shrink-0">
+                      <img 
+                        src={recharge.screenshot_url} 
+                        alt="付款截图" 
+                        className="w-32 h-32 object-cover rounded-lg border border-gray-200"
+                      />
+                    </div>
                   </div>
-                  <div className="flex gap-2">
+
+                  <div className="flex gap-3 mt-4 pt-4 border-t border-gray-100">
                     <button
                       onClick={() => handleApprove(recharge.id)}
-                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
+                      className="flex-1 bg-green-500 text-white py-2.5 rounded-xl font-medium hover:bg-green-600 transition-colors"
                     >
-                      通过
+                      批准
                     </button>
                     <button
                       onClick={() => handleReject(recharge.id)}
-                      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm"
+                      className="flex-1 bg-red-500 text-white py-2.5 rounded-xl font-medium hover:bg-red-600 transition-colors"
                     >
                       拒绝
                     </button>
                   </div>
                 </div>
-                <div className="mt-3">
-                  <p className="text-sm text-gray-500 mb-1">付款截图:</p>
-                  <img 
-                    src={recharge.screenshot} 
-                    alt="付款截图" 
-                    className="max-w-xs rounded-lg border"
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+              ))}
+            </div>
+          )}
+        </div>
 
-      <div>
-        <h2 className="text-lg font-medium text-gray-900 mb-4">已处理记录</h2>
-        
-        {processedRecharges.length === 0 ? (
-          <div className="bg-white rounded-lg shadow p-6 text-center text-gray-500">
-            暂无处理记录
-          </div>
-        ) : (
-          <div className="bg-white rounded-lg shadow overflow-hidden">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">用户ID</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">金额</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">状态</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">时间</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {processedRecharges.slice(0, 20).map(recharge => (
-                  <tr key={recharge.id}>
-                    <td className="px-4 py-3 text-sm font-mono">{recharge.userId}</td>
-                    <td className="px-4 py-3 text-sm">{recharge.amount}元/{recharge.points}积分</td>
-                    <td className="px-4 py-3 text-sm">
-                      <span className={`px-2 py-1 rounded-full text-xs ${
-                        recharge.status === 'approved' 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-red-100 text-red-800'
-                      }`}>
-                        {recharge.status === 'approved' ? '已通过' : '已拒绝'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-500">
-                      {new Date(recharge.createdAt).toLocaleString()}
-                    </td>
+        {/* 历史记录 */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+          <h2 className="text-xl font-bold text-gray-900 mb-6">历史记录</h2>
+
+          {processedRecharges.length === 0 ? (
+            <div className="text-center py-8 text-gray-400">
+              暂无历史记录
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="text-left text-xs text-gray-500 uppercase">
+                    <th className="pb-3">用户ID</th>
+                    <th className="pb-3">金额</th>
+                    <th className="pb-3">积分</th>
+                    <th className="pb-3">状态</th>
+                    <th className="pb-3">时间</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {processedRecharges.map(recharge => (
+                    <tr key={recharge.id}>
+                      <td className="py-3 text-sm font-mono text-gray-700">{recharge.user_id}</td>
+                      <td className="py-3 text-sm text-gray-900">{recharge.amount} 元</td>
+                      <td className="py-3 text-sm text-yellow-600">{recharge.points} 积分</td>
+                      <td className="py-3">
+                        <span className={`px-2 py-1 text-xs rounded-full ${
+                          recharge.status === 'approved'
+                            ? 'bg-green-50 text-green-700'
+                            : 'bg-red-50 text-red-700'
+                        }`}>
+                          {recharge.status === 'approved' ? '已批准' : '已拒绝'}
+                        </span>
+                      </td>
+                      <td className="py-3 text-sm text-gray-500">
+                        {new Date(recharge.created_at).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

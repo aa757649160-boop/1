@@ -1,35 +1,31 @@
 'use client';
-
 import { useState, useEffect } from 'react';
-import { RECHARGE_OPTIONS, PAYMENT_QRCODE } from '@/lib/config';
+import { RECHARGE_TIERS, PAYMENT_QRCODE } from '@/lib/config';
 
 export default function ProfilePage() {
   const [userId, setUserId] = useState('');
-  const [points, setPoints] = useState(0);
-  const [selectedOption, setSelectedOption] = useState(RECHARGE_OPTIONS[0]);
-  const [screenshot, setScreenshot] = useState('');
+  const [points, setPoints] = useState<number | null>(null);
+  const [selectedTier, setSelectedTier] = useState<number | null>(null);
+  const [screenshot, setScreenshot] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [showRecharge, setShowRecharge] = useState(false);
 
   useEffect(() => {
-    // 获取用户ID和积分
     const storedUserId = localStorage.getItem('userId');
     if (storedUserId) {
       setUserId(storedUserId);
-      // 获取积分
-      fetch(`/api/balance?userId=${storedUserId}`)
+      // 获取用户积分
+      fetch('/api/balance')
         .then(res => res.json())
         .then(data => {
-          if (data.points !== undefined) {
-            setPoints(data.points);
-          }
+          setPoints(data.points);
         });
     }
   }, []);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // 简单的base64编码
       const reader = new FileReader();
       reader.onload = (event) => {
         setScreenshot(event.target?.result as string);
@@ -38,14 +34,15 @@ export default function ProfilePage() {
     }
   };
 
-  const handleRecharge = async () => {
-    if (!screenshot) {
-      alert('请上传付款截图');
+  const handleSubmit = async () => {
+    if (!selectedTier || !screenshot) {
+      alert('请选择充值档位并上传付款截图');
       return;
     }
 
     setLoading(true);
     try {
+      const tier = RECHARGE_TIERS[selectedTier];
       const response = await fetch('/api/recharge', {
         method: 'POST',
         headers: {
@@ -53,20 +50,27 @@ export default function ProfilePage() {
         },
         body: JSON.stringify({
           userId,
-          amount: selectedOption.amount,
-          points: selectedOption.points,
+          amount: tier.amount,
+          points: tier.points,
           screenshot,
         }),
       });
-
       const data = await response.json();
-      if (data.success) {
-        alert('充值申请已提交，请等待管理员审核，审核通过后积分会自动到账');
-        setShowRecharge(false);
-        setScreenshot('');
-      } else {
-        alert(data.error || '提交失败');
+      
+      if (data.error) {
+        alert(data.error);
+        return;
       }
+
+      alert('充值申请已提交，请等待管理员审核！');
+      setSelectedTier(null);
+      setScreenshot(null);
+      // 刷新积分
+      fetch('/api/balance')
+        .then(res => res.json())
+        .then(data => {
+          setPoints(data.points);
+        });
     } catch (error: any) {
       alert(error.message);
     } finally {
@@ -75,118 +79,135 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto p-4">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">个人中心</h1>
+    <div className="min-h-screen bg-white" style={{ backgroundImage: 'radial-gradient(#e5e7eb 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">个人中心</h1>
+          <p className="text-gray-500">查看您的账户信息和积分余额</p>
+        </div>
 
-      <div className="bg-white rounded-lg shadow p-6 mb-6">
-        <h2 className="text-lg font-medium text-gray-900 mb-4">账户信息</h2>
-        <div className="space-y-3">
-          <div className="flex justify-between">
-            <span className="text-gray-500">用户ID</span>
-            <span className="font-mono text-sm">{userId}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-gray-500">当前积分</span>
-            <span className="text-2xl font-bold text-indigo-600">⭐ {points}</span>
+        {/* 积分卡片 */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 mb-8">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-500 mb-1">当前积分余额</p>
+              <div className="flex items-center">
+                <div className="w-10 h-10 bg-yellow-500 rounded-full flex items-center justify-center mr-3">
+                  <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M8.433 7.418c.155-.103.346-.228.589-.356C10.005 6.63 11.022 6.25 12 6.25c.978 0 1.995.38 2.978.812.243.128.434.253.589.356.555.367.85.944.85 1.582v.001c0 .638-.295 1.215-.85 1.582-.155.103-.346.228-.589.356C13.995 11.37 12.978 11.75 12 11.75c-.978 0-1.995-.38-2.978-.812a6.562 6.562 0 01-.589-.356C7.88 10.215 7.585 9.638 7.585 9c0-.638.295-1.215.848-1.582z" />
+                  </svg>
+                </div>
+                <span className="text-4xl font-bold text-gray-900">{points ?? '-'}</span>
+                <span className="text-lg text-gray-500 ml-2">积分</span>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-sm text-gray-500">用户ID</p>
+              <p className="text-sm font-mono text-gray-700">{userId}</p>
+            </div>
           </div>
         </div>
 
-        <button
-          onClick={() => setShowRecharge(true)}
-          className="mt-4 w-full px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-        >
-          充值积分
-        </button>
-      </div>
+        {/* 充值区域 */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+          <h2 className="text-xl font-bold text-gray-900 mb-6">积分充值</h2>
+          
+          {/* 充值档位 */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-3">选择充值档位</label>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {RECHARGE_TIERS.map((tier, index) => (
+                <button
+                  key={index}
+                  onClick={() => setSelectedTier(index)}
+                  className={`p-4 rounded-xl border-2 transition-all ${
+                    selectedTier === index
+                      ? 'border-yellow-500 bg-yellow-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="text-2xl font-bold text-gray-900">{tier.amount}元</div>
+                  <div className="text-sm text-gray-500">{tier.points} 积分</div>
+                </button>
+              ))}
+            </div>
+          </div>
 
-      {showRecharge && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">充值积分</h3>
+          {selectedTier !== null && (
+            <div className="border-t border-gray-100 pt-6">
+              <div className="grid md:grid-cols-2 gap-8">
+                {/* 收款码 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-3">
+                    1. 扫码付款
+                  </label>
+                  <div className="bg-gray-50 rounded-xl p-6 flex flex-col items-center">
+                    <img 
+                      src={PAYMENT_QRCODE} 
+                      alt="收款码" 
+                      className="w-48 h-48 rounded-lg shadow-sm"
+                    />
+                    <p className="text-sm text-gray-500 mt-3">
+                      扫码支付 {RECHARGE_TIERS[selectedTier].amount} 元
+                    </p>
+                  </div>
+                </div>
 
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">选择充值金额</label>
-              <div className="grid grid-cols-2 gap-2">
-                {RECHARGE_OPTIONS.map(option => (
+                {/* 上传截图 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-3">
+                    2. 上传付款截图
+                  </label>
+                  <div className="bg-gray-50 rounded-xl p-6">
+                    {!screenshot ? (
+                      <label className="flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-yellow-400 transition-colors">
+                        <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                          <svg className="w-8 h-8 mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                          </svg>
+                          <p className="mb-2 text-sm text-gray-500">
+                            <span className="font-semibold">点击上传</span> 或拖拽文件
+                          </p>
+                          <p className="text-xs text-gray-400">PNG, JPG 最大 10MB</p>
+                        </div>
+                        <input 
+                          type="file" 
+                          className="hidden" 
+                          accept="image/*"
+                          onChange={handleFileChange}
+                        />
+                      </label>
+                    ) : (
+                      <div className="relative">
+                        <img 
+                          src={screenshot} 
+                          alt="截图预览" 
+                          className="w-full h-48 object-contain rounded-lg"
+                        />
+                        <button
+                          onClick={() => setScreenshot(null)}
+                          className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
                   <button
-                    key={option.amount}
-                    onClick={() => setSelectedOption(option)}
-                    className={`p-3 border rounded-lg text-center ${
-                      selectedOption.amount === option.amount
-                        ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
+                    onClick={handleSubmit}
+                    disabled={loading || !screenshot}
+                    className="w-full mt-4 bg-yellow-500 text-white py-3 rounded-xl font-medium hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    <div className="font-medium">{option.label}</div>
+                    {loading ? '提交中...' : '提交充值申请'}
                   </button>
-                ))}
+                </div>
               </div>
             </div>
-
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">付款码</label>
-              <div className="text-center">
-                <img 
-                  src={PAYMENT_QRCODE} 
-                  alt="付款码" 
-                  className="w-48 h-48 mx-auto border rounded-lg"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = 'https://picsum.photos/200/200?text=请上传您的收款码';
-                  }}
-                />
-                <p className="text-sm text-gray-500 mt-2">
-                  请扫码支付 {selectedOption.amount} 元
-                </p>
-              </div>
-            </div>
-
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">上传付款截图</label>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleFileChange}
-                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
-              />
-              {screenshot && (
-                <img 
-                  src={screenshot} 
-                  alt="付款截图" 
-                  className="mt-2 w-full rounded-lg"
-                />
-              )}
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                onClick={() => {
-                  setShowRecharge(false);
-                  setScreenshot('');
-                }}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                取消
-              </button>
-              <button
-                onClick={handleRecharge}
-                disabled={loading}
-                className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-              >
-                {loading ? '提交中...' : '提交审核'}
-              </button>
-            </div>
-          </div>
+          )}
         </div>
-      )}
-
-      <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-lg font-medium text-gray-900 mb-4">使用说明</h2>
-        <ul className="text-sm text-gray-600 space-y-2">
-          <li>• 积分可以用来调用AI模型，不同模型价格不同</li>
-          <li>• 充值后需要管理员审核，审核通过后积分会自动到账</li>
-          <li>• 积分永久有效，不会过期</li>
-          <li>• 如有问题请联系管理员</li>
-        </ul>
       </div>
     </div>
   );
